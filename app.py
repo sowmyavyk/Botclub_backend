@@ -10,7 +10,7 @@ bcrypt = Bcrypt(app)
 app.config['SECRET_KEY'] = 'your_secret_key'
 
 # MongoDB setup
-client = MongoClient("mongodb+srv://Harsha1234:Harsha1234@cluster1.nwz3t.mongodb.net/authdb?retryWrites=true&w=majority")
+client = MongoClient("mongodb+srv://Harsha1234:Harsha1234@cluster1.nwz3t.mongodb.net/user_auth?retryWrites=true&w=majority")
 db = client['user_auth']
 users_collection = db['users']
 
