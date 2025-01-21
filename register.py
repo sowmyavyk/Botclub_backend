@@ -10,19 +10,17 @@ bcrypt = Bcrypt(app)
 app.config['SECRET_KEY'] = 'your_secret_key'
 
 # MongoDB setup
-client = MongoClient("mongodb+srv://Harsha1234:Harsha1234@cluster1.nwz3t.mongodb.net/user_auth?retryWrites=true&w=majority")
-db = client['user_auth']
-users_collection = db['users']
-schools_collection = db['schools']  # New collection for schools
+client = MongoClient("mongodb+srv://Harsha1234:Harsha1234@cluster1.nwz3t.mongodb.net/authdb?retryWrites=true&w=majority")
+auth_db = client['user_auth']
+users_collection = auth_db['users']
+schools_collection = auth_db["schools"] 
 
-# Endpoint to fetch school names
 @app.route('/schools', methods=['GET'])
 def get_schools():
-    schools = schools_collection.find({}, {"_id": 0, "name": 1})  # Fetch only the school names
-    school_list = [school['name'] for school in schools]
-    return jsonify({"schools": school_list}), 200
+    """Fetch and return the list of schools."""
+    schools = list(schools_collection.find({}, {"_id": 0}))  # Exclude the MongoDB `_id` field
+    return jsonify(schools)
 
-# Registration endpoint
 @app.route('/register', methods=['POST'])
 def register():
     data = request.get_json()
@@ -31,13 +29,14 @@ def register():
     email = data.get('email')
     full_name = data.get('full_name')
     phone = data.get('phone')
-    school_name = data.get('school_name')
+    school_name = data.get('school')  # Get the selected school name
 
     if not all([username, password, email, full_name, phone, school_name]):
-        return jsonify({"error": "All fields (username, password, email, full_name, phone, school_name) are required!"}), 400
+        return jsonify({"error": "All fields (username, password, email, full_name, phone, school) are required!"}), 400
 
+    # Check if the school exists in the database
     if not schools_collection.find_one({"name": school_name}):
-        return jsonify({"error": "Invalid school name!"}), 400
+        return jsonify({"error": "Selected school does not exist!"}), 400
 
     if users_collection.find_one({"username": username}):
         return jsonify({"error": "Username already exists!"}), 400
@@ -52,14 +51,13 @@ def register():
         "email": email,
         "full_name": full_name,
         "phone": phone,
-        "school_name": school_name,
+        "school": school_name,
         "created_at": datetime.datetime.utcnow()
     }
 
     users_collection.insert_one(user)
     return jsonify({"message": "User registered successfully!"}), 201
 
-# Login endpoint
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -81,7 +79,6 @@ def login():
 
     return jsonify({"token": token}), 200
 
-# Protected route
 @app.route('/protected', methods=['GET'])
 def protected():
     token = request.headers.get('Authorization')
