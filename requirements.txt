@@ -1,7 +1,0 @@
-Flask
-gunicorn
-pymongo
-dnspython
-Bcrypt
-jwt
-datetime
