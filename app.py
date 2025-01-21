@@ -13,7 +13,16 @@ app.config['SECRET_KEY'] = 'your_secret_key'
 client = MongoClient("mongodb+srv://Harsha1234:Harsha1234@cluster1.nwz3t.mongodb.net/user_auth?retryWrites=true&w=majority")
 db = client['user_auth']
 users_collection = db['users']
+schools_collection = db['schools']  # New collection for schools
 
+# Endpoint to fetch school names
+@app.route('/schools', methods=['GET'])
+def get_schools():
+    schools = schools_collection.find({}, {"_id": 0, "name": 1})  # Fetch only the school names
+    school_list = [school['name'] for school in schools]
+    return jsonify({"schools": school_list}), 200
+
+# Registration endpoint
 @app.route('/register', methods=['POST'])
 def register():
     data = request.get_json()
@@ -22,9 +31,13 @@ def register():
     email = data.get('email')
     full_name = data.get('full_name')
     phone = data.get('phone')
+    school_name = data.get('school_name')
 
-    if not all([username, password, email, full_name, phone]):
-        return jsonify({"error": "All fields (username, password, email, full_name, phone) are required!"}), 400
+    if not all([username, password, email, full_name, phone, school_name]):
+        return jsonify({"error": "All fields (username, password, email, full_name, phone, school_name) are required!"}), 400
+
+    if not schools_collection.find_one({"name": school_name}):
+        return jsonify({"error": "Invalid school name!"}), 400
 
     if users_collection.find_one({"username": username}):
         return jsonify({"error": "Username already exists!"}), 400
@@ -39,12 +52,14 @@ def register():
         "email": email,
         "full_name": full_name,
         "phone": phone,
+        "school_name": school_name,
         "created_at": datetime.datetime.utcnow()
     }
 
     users_collection.insert_one(user)
     return jsonify({"message": "User registered successfully!"}), 201
 
+# Login endpoint
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -66,6 +81,7 @@ def login():
 
     return jsonify({"token": token}), 200
 
+# Protected route
 @app.route('/protected', methods=['GET'])
 def protected():
     token = request.headers.get('Authorization')
