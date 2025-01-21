@@ -3,6 +3,7 @@ from flask_bcrypt import Bcrypt
 from pymongo import MongoClient
 import jwt
 import datetime
+import os
 
 app = Flask(__name__)
 bcrypt = Bcrypt(app)
@@ -79,5 +80,6 @@ def protected():
     except jwt.InvalidTokenError:
         return jsonify({"error": "Invalid token!"}), 401
 
-if __name__ == '__main__':
-    app.run(debug=True)
+if __name__ == "__main__":
+    # Ensure the app binds to the correct port
+    app.run(debug=True, host="0.0.0.0", port=int(os.getenv("PORT", 5001)))
