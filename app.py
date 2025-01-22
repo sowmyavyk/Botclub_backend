@@ -13,7 +13,7 @@ app.config['SECRET_KEY'] = 'your_secret_key'
 client = MongoClient("mongodb+srv://Harsha1234:Harsha1234@cluster1.nwz3t.mongodb.net/authdb?retryWrites=true&w=majority")
 auth_db = client['user_auth']
 users_collection = auth_db['users']
-schools_collection = auth_db["schools"] 
+schools_collection = auth_db["schools"]
 
 # Directory to temporarily store uploaded images (optional, only for processing)
 UPLOAD_FOLDER = 'uploads'
@@ -52,7 +52,7 @@ def register():
     user = {
         "name": name,
         "email": email,
-        "phone": phone,
+        "phone": phone,  # Store phone as password
         "subject": subject,
         "school": school_name,
         "created_at": datetime.datetime.utcnow()
@@ -65,15 +65,15 @@ def register():
 def login():
     data = request.get_json()
     email = data.get('email')
-    password = data.get('password')
+    phone = data.get('phone')  # Use phone as password
 
-    if not email or not password:
-        return jsonify({"error": "Email and password are required!"}), 400
+    if not email or not phone:
+        return jsonify({"error": "Email and phone number are required!"}), 400
 
     user = users_collection.find_one({"email": email})
 
-    if not user or not bcrypt.check_password_hash(user['password'], password):
-        return jsonify({"error": "Invalid email or password!"}), 401
+    if not user or user['phone'] != phone:  # Match phone number instead of password
+        return jsonify({"error": "Invalid email or phone number!"}), 401
 
     # Create a token
     token = jwt.encode({
@@ -109,7 +109,7 @@ def profile():
         email = decoded_token['email']
 
         # Fetch the user details from the database
-        user = users_collection.find_one({"email": email}, {"_id": 0, "password": 0})  # Exclude `_id` and `password`
+        user = users_collection.find_one({"email": email}, {"_id": 0, "phone": 0})  # Exclude `_id` and `phone`
 
         if not user:
             return jsonify({"error": "User not found!"}), 404
@@ -123,4 +123,4 @@ def profile():
 
 if __name__ == "__main__":
     # Ensure the app binds to the correct port
-    app.run(debug=True, host="0.0.0.0", port=int(os.getenv("PORT", 5002)))
+    app.run(debug=True, host="0.0.0.0", port=int(os.getenv("PORT", 5002))
