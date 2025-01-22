@@ -1,12 +1,10 @@
 from flask import Flask, request, jsonify
-from flask_bcrypt import Bcrypt
 from pymongo import MongoClient
 import jwt
 import datetime
 import os
 
 app = Flask(__name__)
-bcrypt = Bcrypt(app)
 app.config['SECRET_KEY'] = 'your_secret_key'
 
 # MongoDB setup
@@ -14,13 +12,6 @@ client = MongoClient("mongodb+srv://Harsha1234:Harsha1234@cluster1.nwz3t.mongodb
 auth_db = client['user_auth']
 users_collection = auth_db['users']
 schools_collection = auth_db["schools"]
-
-# Directory to temporarily store uploaded images (optional, only for processing)
-UPLOAD_FOLDER = 'uploads'
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
-
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 @app.route('/schools', methods=['GET'])
 def get_schools():
@@ -30,12 +21,13 @@ def get_schools():
 
 @app.route('/register', methods=['POST'])
 def register():
-    # Collect required fields
-    name = request.form.get('name')
-    email = request.form.get('email')
-    phone = request.form.get('phone')
-    subject = request.form.get('subject')
-    school_name = request.form.get('school')
+    # Collect required fields from JSON body
+    data = request.get_json()
+    name = data.get('name')
+    email = data.get('email')
+    phone = data.get('phone')
+    subject = data.get('subject')
+    school_name = data.get('school')
 
     if not all([name, email, phone, subject, school_name]):
         return jsonify({"error": "All fields (name, email, phone, subject, school) are required!"}), 400
