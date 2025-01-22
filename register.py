@@ -4,6 +4,8 @@ from pymongo import MongoClient
 import jwt
 import datetime
 import os
+from werkzeug.utils import secure_filename
+import base64
 
 app = Flask(__name__)
 bcrypt = Bcrypt(app)
@@ -15,6 +17,13 @@ auth_db = client['user_auth']
 users_collection = auth_db['users']
 schools_collection = auth_db["schools"] 
 
+# Directory to temporarily store uploaded images (optional, only for processing)
+UPLOAD_FOLDER = 'uploads'
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
 @app.route('/schools', methods=['GET'])
 def get_schools():
     """Fetch and return the list of schools."""
@@ -23,16 +32,16 @@ def get_schools():
 
 @app.route('/register', methods=['POST'])
 def register():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-    email = data.get('email')
-    full_name = data.get('full_name')
-    phone = data.get('phone')
-    school_name = data.get('school')  # Get the selected school name
+    username = request.form.get('username')
+    password = request.form.get('password')
+    email = request.form.get('email')
+    full_name = request.form.get('full_name')
+    phone = request.form.get('phone')
+    school_name = request.form.get('school')
+    photo = request.files.get('photo')  # The uploaded photo file
 
-    if not all([username, password, email, full_name, phone, school_name]):
-        return jsonify({"error": "All fields (username, password, email, full_name, phone, school) are required!"}), 400
+    if not all([username, password, email, full_name, phone, school_name, photo]):
+        return jsonify({"error": "All fields (username, password, email, full_name, phone, school, photo) are required!"}), 400
 
     # Check if the school exists in the database
     if not schools_collection.find_one({"name": school_name}):
@@ -44,6 +53,17 @@ def register():
     if users_collection.find_one({"email": email}):
         return jsonify({"error": "Email already exists!"}), 400
 
+    # Save the photo file temporarily and encode it
+    filename = secure_filename(photo.filename)
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    photo.save(file_path)
+
+    with open(file_path, "rb") as image_file:
+        encoded_photo = base64.b64encode(image_file.read()).decode('utf-8')  # Convert to Base64 string
+
+    # Remove the temporary file
+    os.remove(file_path)
+
     hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
     user = {
         "username": username,
@@ -52,6 +72,7 @@ def register():
         "full_name": full_name,
         "phone": phone,
         "school": school_name,
+        "photo": encoded_photo,  # Store the Base64 encoded photo in the database
         "created_at": datetime.datetime.utcnow()
     }
 
