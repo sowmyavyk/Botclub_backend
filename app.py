@@ -10,78 +10,79 @@ bcrypt = Bcrypt(app)
 app.config['SECRET_KEY'] = 'your_secret_key'
 
 # MongoDB setup
-client = MongoClient("mongodb+srv://Harsha1234:Harsha1234@cluster1.nwz3t.mongodb.net/user_auth?retryWrites=true&w=majority")
-db = client['user_auth']
-users_collection = db['users']
-schools_collection = db['schools']  # New collection for schools
+client = MongoClient("mongodb+srv://Harsha1234:Harsha1234@cluster1.nwz3t.mongodb.net/authdb?retryWrites=true&w=majority")
+auth_db = client['user_auth']
+users_collection = auth_db['users']
+schools_collection = auth_db["schools"] 
 
-# Endpoint to fetch school names
+# Directory to temporarily store uploaded images (optional, only for processing)
+UPLOAD_FOLDER = 'uploads'
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
 @app.route('/schools', methods=['GET'])
 def get_schools():
-    schools = schools_collection.find({}, {"_id": 0, "name": 1})  # Fetch only the school names
-    school_list = [school['name'] for school in schools]
-    return jsonify({"schools": school_list}), 200
+    """Fetch and return the list of schools."""
+    schools = list(schools_collection.find({}, {"_id": 0}))  # Exclude the MongoDB `_id` field
+    return jsonify(schools)
 
-# Registration endpoint
 @app.route('/register', methods=['POST'])
 def register():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-    email = data.get('email')
-    full_name = data.get('full_name')
-    phone = data.get('phone')
-    school_name = data.get('school_name')
+    # Collect required fields
+    name = request.form.get('name')
+    email = request.form.get('email')
+    phone = request.form.get('phone')
+    subject = request.form.get('subject')
+    school_name = request.form.get('school')
 
-    if not all([username, password, email, full_name, phone, school_name]):
-        return jsonify({"error": "All fields (username, password, email, full_name, phone, school_name) are required!"}), 400
+    if not all([name, email, phone, subject, school_name]):
+        return jsonify({"error": "All fields (name, email, phone, subject, school) are required!"}), 400
 
+    # Check if the school exists in the database
     if not schools_collection.find_one({"name": school_name}):
-        return jsonify({"error": "Invalid school name!"}), 400
+        return jsonify({"error": "Selected school does not exist!"}), 400
 
-    if users_collection.find_one({"username": username}):
-        return jsonify({"error": "Username already exists!"}), 400
-
+    # Check if the email already exists
     if users_collection.find_one({"email": email}):
         return jsonify({"error": "Email already exists!"}), 400
 
-    hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+    # Store user in the database
     user = {
-        "username": username,
-        "password": hashed_password,
+        "name": name,
         "email": email,
-        "full_name": full_name,
         "phone": phone,
-        "school_name": school_name,
+        "subject": subject,
+        "school": school_name,
         "created_at": datetime.datetime.utcnow()
     }
 
     users_collection.insert_one(user)
     return jsonify({"message": "User registered successfully!"}), 201
 
-# Login endpoint
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
-    username = data.get('username')
+    email = data.get('email')
     password = data.get('password')
 
-    if not username or not password:
-        return jsonify({"error": "Username and password are required!"}), 400
+    if not email or not password:
+        return jsonify({"error": "Email and password are required!"}), 400
 
-    user = users_collection.find_one({"username": username})
+    user = users_collection.find_one({"email": email})
 
     if not user or not bcrypt.check_password_hash(user['password'], password):
-        return jsonify({"error": "Invalid username or password!"}), 401
+        return jsonify({"error": "Invalid email or password!"}), 401
 
+    # Create a token
     token = jwt.encode({
-        "username": username,
+        "email": email,
         "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=1)
     }, app.config['SECRET_KEY'], algorithm="HS256")
 
     return jsonify({"token": token}), 200
 
-# Protected route
 @app.route('/protected', methods=['GET'])
 def protected():
     token = request.headers.get('Authorization')
@@ -90,7 +91,31 @@ def protected():
 
     try:
         decoded_token = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
-        return jsonify({"message": f"Welcome, {decoded_token['username']}!"}), 200
+        return jsonify({"message": f"Welcome, {decoded_token['email']}!"}), 200
+    except jwt.ExpiredSignatureError:
+        return jsonify({"error": "Token has expired!"}), 401
+    except jwt.InvalidTokenError:
+        return jsonify({"error": "Invalid token!"}), 401
+
+@app.route('/profile', methods=['GET'])
+def profile():
+    token = request.headers.get('Authorization')  # JWT token from the request header
+    if not token:
+        return jsonify({"error": "Token is missing!"}), 401
+
+    try:
+        # Decode the token to extract the email
+        decoded_token = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+        email = decoded_token['email']
+
+        # Fetch the user details from the database
+        user = users_collection.find_one({"email": email}, {"_id": 0, "password": 0})  # Exclude `_id` and `password`
+
+        if not user:
+            return jsonify({"error": "User not found!"}), 404
+
+        return jsonify(user), 200
+
     except jwt.ExpiredSignatureError:
         return jsonify({"error": "Token has expired!"}), 401
     except jwt.InvalidTokenError:
@@ -98,4 +123,4 @@ def protected():
 
 if __name__ == "__main__":
     # Ensure the app binds to the correct port
-    app.run(debug=True, host="0.0.0.0", port=int(os.getenv("PORT", 5001)))
+    app.run(debug=True, host="0.0.0.0", port=int(os.getenv("PORT", 5002)))
