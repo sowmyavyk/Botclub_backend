@@ -3,7 +3,8 @@ from pymongo import MongoClient
 import jwt
 import datetime
 import os
-from flask import Flask, request, jsonify, session
+import uuid  # To generate unique API keys
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_secret_key'
 
@@ -21,7 +22,7 @@ def get_schools():
 
 @app.route('/register', methods=['POST'])
 def register():
-    # Collect required fields from JSON body
+    """Register a new user and generate an API key."""
     data = request.get_json()
     name = data.get('name')
     email = data.get('email')
@@ -40,21 +41,26 @@ def register():
     if users_collection.find_one({"email": email}):
         return jsonify({"error": "Email already exists!"}), 400
 
+    # Generate a unique API key
+    api_key = str(uuid.uuid4())  # Generate unique API key using uuid
+
     # Store user in the database
     user = {
         "name": name,
         "email": email,
-        "phone": phone,  # Store phone as password
+        "phone": phone,
         "subject": subject,
         "school": school_name,
+        "api_key": api_key,  # Save API key
         "created_at": datetime.datetime.utcnow()
     }
 
     users_collection.insert_one(user)
-    return jsonify({"message": "User registered successfully!"}), 201
+    return jsonify({"message": "User registered successfully!", "api_key": api_key}), 201
 
 @app.route('/login', methods=['POST'])
 def login():
+    """Authenticate the user and return their API key."""
     data = request.get_json()
     email = data.get('email')
     phone = data.get('phone')  # Use phone as password
@@ -67,16 +73,12 @@ def login():
     if not user or user['phone'] != phone:  # Match phone number instead of password
         return jsonify({"error": "Invalid email or phone number!"}), 401
 
-    # Create a token
-    token = jwt.encode({
-        "email": email,
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=1)
-    }, app.config['SECRET_KEY'], algorithm="HS256")
-
-    return jsonify({"token": token}), 200
+    # Return the user's API key
+    return jsonify({"message": "Login successful!", "api_key": user['api_key']}), 200
 
 @app.route('/protected', methods=['GET'])
 def protected():
+    """Access a protected route using JWT token."""
     token = request.headers.get('Authorization')
     if not token:
         return jsonify({"error": "Token is missing!"}), 401
