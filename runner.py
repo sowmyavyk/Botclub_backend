@@ -1,9 +1,10 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, session
 from pymongo import MongoClient
 import jwt
 import datetime
 import os
-from flask import Flask, request, jsonify, session
+import uuid  # To generate unique API keys
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_secret_key'
 
@@ -21,7 +22,7 @@ def get_schools():
 
 @app.route('/register', methods=['POST'])
 def register():
-    # Collect required fields from JSON body
+    """Register a new user and generate an API key."""
     data = request.get_json()
     name = data.get('name')
     email = data.get('email')
@@ -40,21 +41,26 @@ def register():
     if users_collection.find_one({"email": email}):
         return jsonify({"error": "Email already exists!"}), 400
 
+    # Generate a unique API key
+    api_key = str(uuid.uuid4())
+
     # Store user in the database
     user = {
         "name": name,
         "email": email,
-        "phone": phone,  # Store phone as password
+        "phone": phone,
         "subject": subject,
         "school": school_name,
+        "api_key": api_key,  # Save API key
         "created_at": datetime.datetime.utcnow()
     }
 
     users_collection.insert_one(user)
-    return jsonify({"message": "User registered successfully!"}), 201
+    return jsonify({"message": "User registered successfully!", "api_key": api_key}), 201
 
 @app.route('/login', methods=['POST'])
 def login():
+    """Authenticate the user and return their API key."""
     data = request.get_json()
     email = data.get('email')
     phone = data.get('phone')  # Use phone as password
@@ -67,42 +73,34 @@ def login():
     if not user or user['phone'] != phone:  # Match phone number instead of password
         return jsonify({"error": "Invalid email or phone number!"}), 401
 
-    # Create a token
-    token = jwt.encode({
-        "email": email,
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=1)
-    }, app.config['SECRET_KEY'], algorithm="HS256")
+    # Return the user's API key
+    return jsonify({"message": "Login successful!", "api_key": user['api_key']}), 200
 
-    return jsonify({"token": token}), 200
-
-@app.route('/protected', methods=['GET'])
-def protected():
-    token = request.headers.get('Authorization')
-    if not token:
-        return jsonify({"error": "Token is missing!"}), 401
-
-    try:
-        decoded_token = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
-        return jsonify({"message": f"Welcome, {decoded_token['email']}!"}), 200
-    except jwt.ExpiredSignatureError:
-        return jsonify({"error": "Token has expired!"}), 401
-    except jwt.InvalidTokenError:
-        return jsonify({"error": "Invalid token!"}), 401
-    
 @app.route('/profile', methods=['GET'])
 def profile():
-    """Retrieve user profile using the API key."""
-    api_key = request.headers.get('API-Key')
+    # Check if the user is logged in via session or token
+    token = request.headers.get('Authorization')  # Check for token if no session
+    email = session.get('username')  # Session key 'username' stores email after login
+    
+    if not email and not token:
+        return jsonify({"error": "You are not logged in!"}), 401
 
-    if not api_key:
-        return jsonify({"error": "API Key is missing!"}), 400
+    # If token exists, decode it and fetch email
+    if token:
+        try:
+            decoded_token = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+            email = decoded_token.get('email')
+        except jwt.ExpiredSignatureError:
+            return jsonify({"error": "Token has expired!"}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({"error": "Invalid token!"}), 401
 
-    # Validate the API Key
-    user = users_collection.find_one({"api_key": api_key}, {"_id": 0, "name": 1, "email": 1, "phone": 1, "subject": 1, "school": 1})
-
+    # Fetch user data from MongoDB
+    user = users_collection.find_one({"email": email}, {"_id": 0, "phone": 1, "name": 1, "subject": 1, "school": 1})
     if not user:
-        return jsonify({"error": "Invalid API Key!"}), 403
+        return jsonify({"error": "User not found!"}), 404
 
+    # Return the user's profile
     return jsonify({"profile": user}), 200
 
 if __name__ == "__main__":
