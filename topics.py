@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from pymongo import MongoClient
-
+import os
 app = Flask(__name__)
 
 # MongoDB setup
@@ -321,4 +321,5 @@ def get_subtopics():
     return jsonify({"error": "No subtopics found for the given topic!"}), 404
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Ensure the app binds to the correct port
+    app.run(debug=True, host="0.0.0.0", port=int(os.getenv("PORT", 5002)))
