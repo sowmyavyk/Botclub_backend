@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from pymongo import MongoClient
 from datetime import datetime
-
+import os
 app = Flask(__name__)
 
 # MongoDB connection
@@ -41,4 +41,5 @@ def get_username():
     })
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Ensure the app binds to the correct port
+    app.run(debug=True, host="0.0.0.0", port=int(os.getenv("PORT", 5002)))
