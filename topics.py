@@ -9,6 +9,7 @@ client = MongoClient("mongodb+srv://Harsha1234:Harsha1234@cluster1.nwz3t.mongodb
 db = client['authdb']
 subjects_collection = db['subtopics']  # Use the 'subtopics' collection in 'authdb'
 user_subtopics_collection = db['user_subtopics']  # Collection for storing user-specific subtopic orders
+
 @app.route('/')
 def home():
     return "API is running!"
@@ -82,6 +83,34 @@ def get_subtopics():
         return jsonify({"subtopics": user_data["subtopics"]}), 200
 
     # Default subtopic order
+    subject_data = subjects_collection.find_one(
+        {"subject": subject},
+        {"classes." + class_name + ".sections." + section + ".topics": 1, "_id": 0}
+    )
+    if not subject_data:
+        return jsonify({"error": "No subtopics found for the given topic!"}), 404
+
+    class_data = subject_data["classes"].get(class_name, {})
+    section_data = class_data.get("sections", {}).get(section, {})
+    topics = section_data.get("topics", [])
+
+    for t in topics:
+        if t["name"] == topic:
+            return jsonify({"subtopics": t["subtopics"]}), 200
+
+    return jsonify({"error": "No subtopics found for the given topic!"}), 404
+
+@app.route('/default_subtopics', methods=['GET'])
+def get_default_subtopics():
+    subject = request.args.get('subject')
+    class_name = request.args.get('class')
+    section = request.args.get('section')
+    topic = request.args.get('topic')
+
+    if not (subject and class_name and section and topic):
+        return jsonify({"error": "Subject, class, section, and topic are required!"}), 400
+
+    # Fetch default subtopic order
     subject_data = subjects_collection.find_one(
         {"subject": subject},
         {"classes." + class_name + ".sections." + section + ".topics": 1, "_id": 0}
