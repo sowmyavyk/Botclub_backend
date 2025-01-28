@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from pymongo import MongoClient
 import os
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
@@ -9,6 +10,7 @@ client = MongoClient("mongodb+srv://Harsha1234:Harsha1234@cluster1.nwz3t.mongodb
 db = client['authdb']
 subjects_collection = db['subtopics']  # Use the 'subtopics' collection in 'authdb'
 user_subtopics_collection = db['user_subtopics']  # Collection for storing user-specific subtopic orders
+scheduled_lessons_collection = db['scheduled_lessons'] 
 
 @app.route('/')
 def home():
@@ -128,6 +130,87 @@ def get_default_subtopics():
 
     return jsonify({"error": "No subtopics found for the given topic!"}), 404
 
+@app.route('/get_api_key', methods=['POST'])
+def get_api_key():
+    username = request.json.get("email")
+    api_key = f"{username}_api_key"
+    return jsonify({"api_key": api_key})
+
+@app.route('/available_schedule', methods=['GET'])
+def available_schedule():
+    today = datetime.now()
+    tomorrow = today + timedelta(days=1)
+
+    # Generate the next 5 days
+    upcoming_days = [(today + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(1, 7)]
+
+    # Format the response
+    return jsonify({
+        "options": {
+            "Today": today.strftime("%Y-%m-%d"),
+            "Tomorrow": tomorrow.strftime("%Y-%m-%d"),
+            "Upcoming Days": upcoming_days
+        },
+        "time_slots": {
+            "morning_slots": ["9:00 AM - 9:50 AM", "9:50 AM - 10:40 AM", "10:50 AM - 11:40 AM", "11:40 AM - 12:30 PM"],
+            "afternoon_slots": ["1:30 PM - 2:20 PM", "2:20 PM - 3:10 PM", "3:10 PM - 4:00 PM", "4:00 PM - 5:00 PM"]
+        }
+    }), 200
+
+# API to schedule a lesson
+@app.route('/schedule_lesson', methods=['POST'])
+def schedule_lesson():
+    data = request.json
+    api_key = request.headers.get('API-Key')
+
+    subject = data.get("subject")
+    class_name = data.get("class")
+    section = data.get("section")
+    topic = data.get("topic")
+    date = data.get("date")
+    time_slot = data.get("time_slot")
+    selected_subtopics = data.get("selected_subtopics")
+
+    if not (api_key and subject and class_name and section and topic and date and time_slot and selected_subtopics):
+        return jsonify({"error": "All fields (API-Key, subject, class, section, topic, date, time_slot, selected_subtopics) are required!"}), 400
+
+    # Fetch available subtopics
+    subject_data = subjects_collection.find_one(
+        {"subject": subject},
+        {"classes." + class_name + ".sections." + section + ".topics": 1, "_id": 0}
+    )
+    if not subject_data:
+        return jsonify({"error": "Invalid subject, class, section, or topic!"}), 400
+
+    class_data = subject_data["classes"].get(class_name, {})
+    section_data = class_data.get("sections", {}).get(section, {})
+    topics = section_data.get("topics", [])
+
+    available_subtopics = []
+    for t in topics:
+        if t["name"] == topic:
+            available_subtopics = t.get("subtopics", [])
+
+    # Validate selected subtopics
+    if not set(selected_subtopics).issubset(set(available_subtopics)):
+        return jsonify({"error": "Selected subtopics are invalid or not available for the given topic!"}), 400
+
+    # Save the scheduled lesson
+    scheduled_lessons_collection.insert_one({
+        "api_key": api_key,
+        "subject": subject,
+        "class": class_name,
+        "section": section,
+        "topic": topic,
+        "date": date,
+        "time_slot": time_slot,
+        "selected_subtopics": selected_subtopics
+    })
+
+    return jsonify({"message": "Lesson scheduled successfully!"}), 200
+
+
+# API to reorder subtopics
 @app.route('/reorder_subtopics', methods=['PUT'])
 def reorder_subtopics():
     data = request.json
@@ -149,11 +232,25 @@ def reorder_subtopics():
 
     return jsonify({"message": "Subtopics reordered successfully!"}), 200
 
-@app.route('/get_api_key', methods=['POST'])
-def get_api_key():
-    username = request.json.get("email")
-    api_key = f"{username}_api_key"
-    return jsonify({"api_key": api_key})
+@app.route('/scheduled_lessons', methods=['GET'])
+def get_scheduled_lessons():
+    filters = {
+        "api_key": request.headers.get('API-Key'),
+        "subject": request.args.get("subject"),
+        "class": request.args.get("class"),
+        "section": request.args.get("section"),
+        "topic": request.args.get("topic"),
+        "date": request.args.get("date"),
+        "time_slot": request.args.get("time_slot")
+    }
+    # Remove None values from filters
+    filters = {k: v for k, v in filters.items() if v}
+
+    lessons = list(scheduled_lessons_collection.find(filters, {"_id": 0}))
+    if not lessons:
+        return jsonify({"error": "No scheduled lessons found for the given criteria!"}), 404
+
+    return jsonify({"scheduled_lessons": lessons}), 200
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=int(os.getenv("PORT", 5001)))
