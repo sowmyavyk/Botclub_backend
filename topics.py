@@ -234,8 +234,16 @@ def reorder_subtopics():
 
 @app.route('/scheduled_lessons', methods=['GET'])
 def get_scheduled_lessons():
+    # Extract the API key from the request headers
+    api_key = request.headers.get('API-Key')
+    
+    # Validate the API key
+    if not api_key:
+        return jsonify({"error": "API-Key is required in the headers!"}), 400
+
+    # Define the filters based on query parameters
     filters = {
-        "api_key": request.headers.get('API-Key'),
+        "api_key": api_key,  # Mandatory filter to ensure data is fetched for the specific user
         "subject": request.args.get("subject"),
         "class": request.args.get("class"),
         "section": request.args.get("section"),
@@ -243,13 +251,18 @@ def get_scheduled_lessons():
         "date": request.args.get("date"),
         "time_slot": request.args.get("time_slot")
     }
-    # Remove None values from filters
-    filters = {k: v for k, v in filters.items() if v}
+    
+    # Remove None values from filters (except for the API key)
+    filters = {k: v for k, v in filters.items() if v is not None}
 
+    # Fetch scheduled lessons from the database
     lessons = list(scheduled_lessons_collection.find(filters, {"_id": 0}))
+    
+    # Check if any lessons were found
     if not lessons:
         return jsonify({"error": "No scheduled lessons found for the given criteria!"}), 404
 
+    # Return the scheduled lessons
     return jsonify({"scheduled_lessons": lessons}), 200
 
 if __name__ == "__main__":
