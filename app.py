@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify, session, render_template
 from pymongo import MongoClient
 import jwt
 import datetime
+import base64
 import os
 import uuid  # To generate unique API keys
 from werkzeug.utils import secure_filename
@@ -26,7 +27,7 @@ def get_schools():
 
 @app.route('/register', methods=['POST'])
 def register():
-    """Register a new user and generate an API key."""
+    """Register a new user and store the profile picture in MongoDB."""
     data = request.form
     name = data.get('name')
     email = data.get('email')
@@ -35,34 +36,18 @@ def register():
     school_name = data.get('school')
     profile_pic = request.files.get('profile_picture')
 
-    upload_folder = "static/uploads"
-    if not os.path.exists(upload_folder):
-        os.makedirs(upload_folder)
-
-    file_path = os.path.join(upload_folder, profile_pic.filename)
-    profile_pic.save(file_path)
     if not all([name, email, phone, subject, school_name, profile_pic]):
         return jsonify({"error": "All fields (name, email, phone, subject, school, profile_picture) are required!"}), 400
 
-    if profile_pic and profile_pic.filename == '':
-        return jsonify({"error": "Profile picture is required!"}), 400
-    
-    if profile_pic and profile_pic.content_length > app.config['MAX_CONTENT_LENGTH']:
-        return jsonify({"error": "Profile picture size must be less than 2MB!"}), 400
-
-    # Check if the school exists in the database
-    if not schools_collection.find_one({"name": school_name}):
-        return jsonify({"error": "Selected school does not exist!"}), 400
-
-    # Check if the email already exists
     if users_collection.find_one({"email": email}):
         return jsonify({"error": "Email already exists!"}), 400
 
-    # Save profile picture
-    filename = secure_filename(profile_pic.filename)
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], str(uuid.uuid4()) + "_" + filename)
-    profile_pic.save(file_path)
-    
+    if not schools_collection.find_one({"name": school_name}):
+        return jsonify({"error": "Selected school does not exist!"}), 400
+
+    # Convert image to Base64
+    profile_pic_base64 = base64.b64encode(profile_pic.read()).decode('utf-8')
+
     # Generate a unique API key
     api_key = str(uuid.uuid4())
 
@@ -73,8 +58,8 @@ def register():
         "phone": phone,
         "subject": subject,
         "school": school_name,
-        "api_key": api_key,  # Save API key
-        "profile_picture": file_path,
+        "api_key": api_key,
+        "profile_picture": profile_pic_base64,  # Store image as Base64
         "created_at": datetime.datetime.utcnow()
     }
 
@@ -116,13 +101,12 @@ def protected():
     
 @app.route('/profile', methods=['GET'])
 def profile():
-    """Retrieve user profile using the API key, including profile picture."""
+    """Retrieve user profile with the profile picture in Base64 format."""
     api_key = request.headers.get('API-Key')
 
     if not api_key:
         return jsonify({"error": "API Key is missing!"}), 400
 
-    # Validate the API Key and retrieve user data
     user = users_collection.find_one(
         {"api_key": api_key},
         {"_id": 0, "name": 1, "email": 1, "phone": 1, "subject": 1, "school": 1, "profile_picture": 1}
@@ -130,10 +114,6 @@ def profile():
 
     if not user:
         return jsonify({"error": "Invalid API Key!"}), 403
-
-    # Convert profile picture path to URL (assuming static folder hosting)
-    if "profile_picture" in user and user["profile_picture"]:
-        user["profile_picture"] = request.host_url + user["profile_picture"]
 
     return jsonify({"profile": user}), 200
 
@@ -157,30 +137,27 @@ def update_phone():
     return jsonify({"message": "Phone number updated successfully!"}), 200
 
 
-@app.route("/update_profile_picture", methods=["POST"])
+
+@app.route('/update_profile_picture', methods=['POST'])
 def update_profile_picture():
-    """Update the profile picture using API key."""
+    """Update the profile picture and store it in MongoDB."""
     api_key = request.headers.get("API-Key")
     profile_pic = request.files.get("profile_picture")
 
-    if not api_key:
-        return jsonify({"error": "API Key is missing!"}), 400
-    if not profile_pic:
-        return jsonify({"error": "Profile picture is required!"}), 400
+    if not api_key or not profile_pic:
+        return jsonify({"error": "API Key and profile picture are required!"}), 400
 
     user = users_collection.find_one({"api_key": api_key})
     if not user:
         return jsonify({"error": "Invalid API Key!"}), 403
 
-    # Save the new profile picture
-    filename = secure_filename(profile_pic.filename)
-    file_path = os.path.join(app.config["UPLOAD_FOLDER"], str(uuid.uuid4()) + "_" + filename)
-    profile_pic.save(file_path)
+    # Convert new image to Base64
+    profile_pic_base64 = base64.b64encode(profile_pic.read()).decode('utf-8')
 
-    users_collection.update_one({"api_key": api_key}, {"$set": {"profile_picture": file_path}})
+    # Update in MongoDB
+    users_collection.update_one({"api_key": api_key}, {"$set": {"profile_picture": profile_pic_base64}})
     
-    return jsonify({"message": "Profile picture updated successfully!", "file_path": file_path}), 200
-
+    return jsonify({"message": "Profile picture updated successfully!"}), 200
 
 if __name__ == "__main__":
     # Ensure the app binds to the correct port
