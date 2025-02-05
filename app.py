@@ -135,47 +135,52 @@ def profile():
 
     return jsonify({"profile": user}), 200
 
-@app.route("/update_phone", methods=["POST"])
-def update_phone():
-    """Update the phone number using API key."""
+@app.route("/update_profile", methods=["POST"])
+def update_profile():
+    """Update the user's profile, allowing changes only for phone and profile picture."""
     api_key = request.headers.get("API-Key")
-    data = request.json
-    new_phone = data.get("phone")
 
     if not api_key:
         return jsonify({"error": "API Key is missing!"}), 400
-    if not new_phone:
-        return jsonify({"error": "New phone number is required!"}), 400
 
     user = users_collection.find_one({"api_key": api_key})
     if not user:
         return jsonify({"error": "Invalid API Key!"}), 403
 
-    users_collection.update_one({"api_key": api_key}, {"$set": {"phone": new_phone}})
-    return jsonify({"message": "Phone number updated successfully!"}), 200
+    update_data = {}
 
+    # Check request type (JSON or multipart/form-data)
+    if request.content_type == "application/json":
+        data = request.get_json()
+        new_phone = data.get("phone")
+        if new_phone:
+            update_data["phone"] = new_phone
 
+    elif request.content_type.startswith("multipart/form-data"):
+        new_phone = request.form.get("phone")
+        profile_pic = request.files.get("profile_picture")
 
-@app.route('/update_profile_picture', methods=['POST'])
-def update_profile_picture():
-    """Update the profile picture and store it in MongoDB."""
-    api_key = request.headers.get("API-Key")
-    profile_pic = request.files.get("profile_picture")
+        if new_phone:
+            update_data["phone"] = new_phone
 
-    if not api_key or not profile_pic:
-        return jsonify({"error": "API Key and profile picture are required!"}), 400
+        if profile_pic:
+            filename = secure_filename(profile_pic.filename)
+            unique_filename = f"{uuid.uuid4()}_{filename}"
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+            profile_pic.save(file_path)
 
-    user = users_collection.find_one({"api_key": api_key})
-    if not user:
-        return jsonify({"error": "Invalid API Key!"}), 403
+            # Generate public URL for Unity
+            profile_pic_url = request.host_url + f"static/uploads/{unique_filename}"
+            update_data["profile_picture"] = profile_pic_url
 
-    # Convert new image to Base64
-    profile_pic_base64 = base64.b64encode(profile_pic.read()).decode('utf-8')
+    # If no valid update data was provided
+    if not update_data:
+        return jsonify({"error": "No valid fields provided to update!"}), 400
 
-    # Update in MongoDB
-    users_collection.update_one({"api_key": api_key}, {"$set": {"profile_picture": profile_pic_base64}})
-    
-    return jsonify({"message": "Profile picture updated successfully!"}), 200
+    # Apply the update in MongoDB
+    users_collection.update_one({"api_key": api_key}, {"$set": update_data})
+
+    return jsonify({"message": "Profile updated successfully!", **update_data}), 200
 
 if __name__ == "__main__":
     # Ensure the app binds to the correct port
