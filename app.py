@@ -4,6 +4,7 @@ import jwt
 import datetime
 import base64
 import os
+from flask import send_file
 import uuid  # To generate unique API keys
 from werkzeug.utils import secure_filename
 
@@ -27,26 +28,38 @@ def get_schools():
 
 @app.route('/register', methods=['POST'])
 def register():
-    """Register a new user and store the profile picture in MongoDB."""
+    """Register a new user and return an API key along with a profile picture URL."""
+    if 'profile_picture' not in request.files:
+        return jsonify({"error": "Profile picture is required!"}), 400
+
     data = request.form
     name = data.get('name')
     email = data.get('email')
     phone = data.get('phone')
     subject = data.get('subject')
     school_name = data.get('school')
-    profile_pic = request.files.get('profile_picture')
+    profile_pic = request.files['profile_picture']
 
+    # Validate required fields
     if not all([name, email, phone, subject, school_name, profile_pic]):
-        return jsonify({"error": "All fields (name, email, phone, subject, school, profile_picture) are required!"}), 400
+        return jsonify({"error": "All fields are required!"}), 400
 
-    if users_collection.find_one({"email": email}):
-        return jsonify({"error": "Email already exists!"}), 400
-
+    # Check if the school exists
     if not schools_collection.find_one({"name": school_name}):
         return jsonify({"error": "Selected school does not exist!"}), 400
 
-    # Convert image to Base64
-    profile_pic_base64 = base64.b64encode(profile_pic.read()).decode('utf-8')
+    # Check if the email exists
+    if users_collection.find_one({"email": email}):
+        return jsonify({"error": "Email already exists!"}), 400
+
+    # Secure filename and create unique file path
+    filename = secure_filename(profile_pic.filename)
+    unique_filename = f"{uuid.uuid4()}_{filename}"
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+    profile_pic.save(file_path)
+
+    # Generate a publicly accessible URL
+    profile_pic_url = request.host_url + f"static/uploads/{unique_filename}"
 
     # Generate a unique API key
     api_key = str(uuid.uuid4())
@@ -58,13 +71,18 @@ def register():
         "phone": phone,
         "subject": subject,
         "school": school_name,
-        "api_key": api_key,
-        "profile_picture": profile_pic_base64,  # Store image as Base64
+        "api_key": api_key,  # Return API key
+        "profile_picture": profile_pic_url,
         "created_at": datetime.datetime.utcnow()
     }
 
     users_collection.insert_one(user)
-    return jsonify({"message": "User registered successfully!", "api_key": api_key}), 201
+    
+    return jsonify({
+        "message": "User registered successfully!",
+        "api_key": api_key,  # Now returning API key
+        "profile_picture": profile_pic_url
+    }), 201
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -98,10 +116,10 @@ def protected():
         return jsonify({"error": "Token has expired!"}), 401
     except jwt.InvalidTokenError:
         return jsonify({"error": "Invalid token!"}), 401
-    
+
 @app.route('/profile', methods=['GET'])
 def profile():
-    """Retrieve user profile with the profile picture in Base64 format."""
+    """Retrieve user profile with a Unity-compatible image URL."""
     api_key = request.headers.get('API-Key')
 
     if not api_key:
