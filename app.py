@@ -137,6 +137,50 @@ def profile():
 
     return jsonify({"profile": user}), 200
 
+@app.route("/update_phone", methods=["POST"])
+def update_phone():
+    """Update the phone number using API key."""
+    api_key = request.headers.get("API-Key")
+    data = request.json
+    new_phone = data.get("phone")
+
+    if not api_key:
+        return jsonify({"error": "API Key is missing!"}), 400
+    if not new_phone:
+        return jsonify({"error": "New phone number is required!"}), 400
+
+    user = users_collection.find_one({"api_key": api_key})
+    if not user:
+        return jsonify({"error": "Invalid API Key!"}), 403
+
+    users_collection.update_one({"api_key": api_key}, {"$set": {"phone": new_phone}})
+    return jsonify({"message": "Phone number updated successfully!"}), 200
+
+
+@app.route("/update_profile_picture", methods=["POST"])
+def update_profile_picture():
+    """Update the profile picture using API key."""
+    api_key = request.headers.get("API-Key")
+    profile_pic = request.files.get("profile_picture")
+
+    if not api_key:
+        return jsonify({"error": "API Key is missing!"}), 400
+    if not profile_pic:
+        return jsonify({"error": "Profile picture is required!"}), 400
+
+    user = users_collection.find_one({"api_key": api_key})
+    if not user:
+        return jsonify({"error": "Invalid API Key!"}), 403
+
+    # Save the new profile picture
+    filename = secure_filename(profile_pic.filename)
+    file_path = os.path.join(app.config["UPLOAD_FOLDER"], str(uuid.uuid4()) + "_" + filename)
+    profile_pic.save(file_path)
+
+    users_collection.update_one({"api_key": api_key}, {"$set": {"profile_picture": file_path}})
+    
+    return jsonify({"message": "Profile picture updated successfully!", "file_path": file_path}), 200
+
 
 if __name__ == "__main__":
     # Ensure the app binds to the correct port
