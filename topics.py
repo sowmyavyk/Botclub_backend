@@ -256,14 +256,23 @@ def get_scheduled_lessons():
     filters = {k: v for k, v in filters.items() if v is not None}
 
     # Fetch scheduled lessons from the database
-    lessons = list(scheduled_lessons_collection.find(filters, {"_id": 0}))
+    lessons = list(scheduled_lessons_collection.find(filters, {"_id": 1, "subject": 1, "class": 1, "section": 1, "topic": 1, "date": 1, "time_slot": 1, "selected_subtopics": 1}))
     
     # Check if any lessons were found
     if not lessons:
         return jsonify({"error": "No scheduled lessons found for the given criteria!"}), 404
 
-    # Return the scheduled lessons
+    # Add the `schedule_id` to each lesson in the response
+    for lesson in lessons:
+        lesson["schedule_id"] = str(lesson["_id"])  # Convert the MongoDB ObjectId to string
+
+    # Remove the MongoDB "_id" field from the response
+    for lesson in lessons:
+        del lesson["_id"]
+
+    # Return the scheduled lessons with the schedule_id
     return jsonify({"scheduled_lessons": lessons}), 200
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=int(os.getenv("PORT", 5001)))
+    app.run(debug=True, host="0.0.0.0", port=int(os.getenv("PORT", 5002)))
+#BACKEND_LESSON_PLAN
