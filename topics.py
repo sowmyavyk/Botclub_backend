@@ -151,10 +151,7 @@ def available_schedule():
             "Tomorrow": tomorrow.strftime("%Y-%m-%d"),
             "Upcoming Days": upcoming_days
         },
-        "time_slots": {
-            "morning_slots": ["9:00 AM - 9:50 AM", "9:50 AM - 10:40 AM", "10:50 AM - 11:40 AM", "11:40 AM - 12:30 PM"],
-            "afternoon_slots": ["1:30 PM - 2:20 PM", "2:20 PM - 3:10 PM", "3:10 PM - 4:00 PM", "4:00 PM - 5:00 PM"]
-        }
+        "time_format": "Please select time in HH:MM AM/PM format (e.g., 9:00 AM, 2:30 PM)"
     }), 200
 
 # API to schedule a lesson
@@ -168,11 +165,11 @@ def schedule_lesson():
     section = data.get("section")
     topic = data.get("topic")
     date = data.get("date")
-    time_slot = data.get("time_slot")
+    time = data.get("time")  # Accepting the time in HH:MM AM/PM format
     selected_subtopics = data.get("selected_subtopics")
 
-    if not (api_key and subject and class_name and section and topic and date and time_slot and selected_subtopics):
-        return jsonify({"error": "All fields (API-Key, subject, class, section, topic, date, time_slot, selected_subtopics) are required!"}), 400
+    if not (api_key and subject and class_name and section and topic and date and time and selected_subtopics):
+        return jsonify({"error": "All fields (API-Key, subject, class, section, topic, date, time, selected_subtopics) are required!"}), 400
 
     # Fetch available subtopics
     subject_data = subjects_collection.find_one(
@@ -195,7 +192,7 @@ def schedule_lesson():
     if not set(selected_subtopics).issubset(set(available_subtopics)):
         return jsonify({"error": "Selected subtopics are invalid or not available for the given topic!"}), 400
 
-    # Save the scheduled lesson
+    # Save the scheduled lesson with the selected time
     scheduled_lessons_collection.insert_one({
         "api_key": api_key,
         "subject": subject,
@@ -203,7 +200,7 @@ def schedule_lesson():
         "section": section,
         "topic": topic,
         "date": date,
-        "time_slot": time_slot,
+        "time": time,  # Store time in HH:MM AM/PM format
         "selected_subtopics": selected_subtopics
     })
 
@@ -249,20 +246,20 @@ def get_scheduled_lessons():
         "section": request.args.get("section"),
         "topic": request.args.get("topic"),
         "date": request.args.get("date"),
-        "time_slot": request.args.get("time_slot")
+        "time": request.args.get("time")
     }
     
     # Remove None values from filters (except for the API key)
     filters = {k: v for k, v in filters.items() if v is not None}
 
     # Fetch scheduled lessons from the database
-    lessons = list(scheduled_lessons_collection.find(filters, {"_id": 1, "subject": 1, "class": 1, "section": 1, "topic": 1, "date": 1, "time_slot": 1, "selected_subtopics": 1}))
+    lessons = list(scheduled_lessons_collection.find(filters, {"_id": 1, "subject": 1, "class": 1, "section": 1, "topic": 1, "date": 1, "time": 1, "selected_subtopics": 1}))
     
     # Check if any lessons were found
     if not lessons:
         return jsonify({"error": "No scheduled lessons found for the given criteria!"}), 404
 
-    # Add the `schedule_id` to each lesson in the response
+    # Add the schedule_id to each lesson in the response
     for lesson in lessons:
         lesson["schedule_id"] = str(lesson["_id"])  # Convert the MongoDB ObjectId to string
 
@@ -272,6 +269,7 @@ def get_scheduled_lessons():
 
     # Return the scheduled lessons with the schedule_id
     return jsonify({"scheduled_lessons": lessons}), 200
+
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=int(os.getenv("PORT", 5002)))
