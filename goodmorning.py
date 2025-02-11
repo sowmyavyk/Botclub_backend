@@ -1,7 +1,9 @@
 from flask import Flask, request, jsonify
 from pymongo import MongoClient
 from datetime import datetime
+import pytz
 import os
+
 app = Flask(__name__)
 
 # MongoDB connection
@@ -26,11 +28,14 @@ def get_username():
     if not username:
         return jsonify({"error": "Username not found"}), 404
 
-    # Determine greeting based on current time
-    current_hour = datetime.now().hour
+    # Set timezone to Indian Standard Time (IST)
+    ist = pytz.timezone("Asia/Kolkata")
+    current_hour = datetime.now(ist).hour
+
+    # Determine greeting based on IST
     if current_hour < 12:
         greeting = "Good Morning"
-    elif current_hour < 18:
+    elif current_hour < 17:
         greeting = "Good Afternoon"
     else:
         greeting = "Good Evening"
