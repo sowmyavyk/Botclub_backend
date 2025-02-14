@@ -186,6 +186,7 @@ def update_profile():
 def serve_uploaded_file(filename):
     """Serve the uploaded profile pictures."""
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-if __name__ == "__main__":
-    # Ensure the app binds to the correct port
-    app.run(debug=True, host="0.0.0.0", port=int(os.getenv("PORT", 5002)))
+
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))  # Use Render's assigned PORT or default to 5000
+    app.run(host='0.0.0.0', port=port, debug=True)
